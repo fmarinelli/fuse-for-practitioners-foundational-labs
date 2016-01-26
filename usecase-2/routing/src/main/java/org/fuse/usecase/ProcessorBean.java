@@ -22,9 +22,6 @@ public class ProcessorBean {
         int c;
         StringBuffer buf = new StringBuffer();
         String response = null;
-
-
-
         exchange.getIn().setBody(response);
     }
 

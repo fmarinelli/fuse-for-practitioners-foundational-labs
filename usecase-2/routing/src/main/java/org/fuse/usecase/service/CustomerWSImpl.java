@@ -3,11 +3,9 @@ package org.fuse.usecase.service;
 import org.globex.Account;
 import org.globex.CorporateAccount;
 
-import javax.jws.WebMethod;
 import javax.jws.WebResult;
 import javax.jws.WebService;
 import javax.jws.soap.SOAPBinding;
-import javax.xml.bind.annotation.XmlSeeAlso;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
@@ -15,7 +13,7 @@ import java.util.Random;
 @WebService(endpointInterface = "org.fuse.usecase.service.CustomerWS")
 public class CustomerWSImpl implements CustomerWS {
 
-    List<String> sales;
+    private final List<String> sales;
 
     public CustomerWSImpl() {
         sales = new ArrayList<String>();
@@ -40,8 +38,10 @@ public class CustomerWSImpl implements CustomerWS {
     @SOAPBinding(parameterStyle = SOAPBinding.ParameterStyle.BARE)
     public CorporateAccount updateAccount(Account account) {
         CorporateAccount ca = new CorporateAccount();
-
-
+        ca.setId(genRandom());
+        ca.setSalesContact(getRandomSales(sales));
+        ca.setCompany(account.getCompany());
+        ca.setContact(account.getContact());
         return ca;
     }
 

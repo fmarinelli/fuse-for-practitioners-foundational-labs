@@ -20,19 +20,128 @@
 
     <!-- SQL Component -->
     <bean id="sql" class="org.apache.camel.component.sql.SqlComponent">
-
+        <property name="dataSource" ref="usecaseDB" />
+        <property name="usePlaceholder" value="true" />
     </bean>
 
-    <cxf:cxfEndpoint id="customerWebService">
-    </cxf:cxfEndpoint>
+    <bean id="jsonDataProvider" class="com.fasterxml.jackson.jaxrs.json.JacksonJaxbJsonProvider"/>
 
-    <cxf:rsServer id="customerRestService">
+    <bean id="customerReSTBean" class="org.fuse.usecase.service.CustomerRestImpl"/>
+    <bean id="customerWSBean" class="org.fuse.usecase.service.CustomerWSImpl"/>
+
+    <bean id="accountAggregator" class="org.fuse.usecase.AccountAggregator"/>
+    <bean id="processorBean" class="org.fuse.usecase.ProcessorBean"/>
+
+    <cxf:cxfEndpoint id="customerWSServer"
+                     address="http://localhost:9090/ws/customerService"
+                     serviceClass="org.fuse.usecase.service.CustomerWS"
+                     loggingFeatureEnabled="true"/>
+
+    <cxf:rsServer id="customerReSTServer"
+                  address="http://localhost:9191/rest"
+                  loggingFeatureEnabled="true">
+        <cxf:providers>
+            <ref bean="jsonDataProvider"/>
+        </cxf:providers>
     </cxf:rsServer>
 
-    <cxf:rsClient id="customerRestServiceClient">
+    <cxf:rsClient id="customerReSTClient"
+                  address="http://localhost:9191/rest"
+                  serviceClass="org.fuse.usecase.service.CustomerRest"
+                  loggingFeatureEnabled="true">
+        <cxf:providers>
+            <ref bean="jsonDataProvider"/>
+        </cxf:providers>
     </cxf:rsClient>
+
 
     <camelContext trace="false" xmlns="http://camel.apache.org/schema/spring">
         <propertyPlaceholder id="properties" location="fabric8/route.properties"/>
+        <endpoint id="csv2json"
+                  uri="dozer:csv2json?sourceModel=org.acme.Customer&amp;targetModel=org.globex.Account&amp;mappingFile=transformation.xml"/>
+        <dataFormats>
+            <bindy type="Csv" classType="org.acme.Customer" id="transform-csv"/>
+            <json library="Jackson" id="transform-json"/>
+        </dataFormats>
+
+        <route>
+            <from uri="file:{{fileInput}}?fileName=customers.csv&amp;noop=true&amp;idempotent=true&amp;idempotentKey=${file:name}-${file:size}"/>
+            <onException>
+                <exception>java.lang.IllegalArgumentException</exception>
+                <handled>
+                    <constant>true</constant>
+                </handled>
+                <log message="Transformation result in error ${body}"/>
+                <to uri="file:{{fileError}}?fileName=account-${date:now:yyyyMMdd}-${property.CamelSplitIndex}.json"/>
+            </onException>
+            <split streaming="true">
+                <tokenize token="\n" trim="true"/>
+                <log message="Transform input ${body} to json"/>
+                <unmarshal ref="transform-csv"/>
+                <to ref="csv2json"/>
+
+                <multicast strategyRef="accountAggregator">
+                    <to uri="direct:callReSTEndpoint" pattern="InOut"/>
+                    <to uri="direct:callWSEndpoint" pattern="InOut"/>
+                </multicast>
+
+                <wireTap uri="direct:saveToFile" />
+
+                <to uri="direct:insertDB" />
+            </split>
+        </route>
+
+        <route>
+            <from uri="direct:saveToFile" />
+            <marshal ref="transform-json"/>
+            <convertBodyTo type="java.lang.String"/>
+            <to uri="file:{{fileOutput}}?fileName=csv-record-${date:now:yyyyMMdd}-${property.CamelSplitIndex}.txt"/>
+        </route>
+
+        <route>
+            <from uri="direct:insertDB" />
+            <transform>
+                <method bean="processorBean" method="defineNamedParameters" />
+            </transform>
+            <to uri="sql:INSERT INTO USECASE.T_ACCOUNT (CLIENT_ID,SALES_CONTACT,COMPANY_NAME,COMPANY_GEO,COMPANY_ACTIVE,CONTACT_FIRST_NAME,CONTACT_LAST_NAME,CONTACT_ADDRESS,CONTACT_CITY,CONTACT_STATE,CONTACT_ZIP,CONTACT_PHONE,CREATION_DATE,CREATION_USER) VALUES (:#CLIENT_ID,:#SALES_CONTACT,:#COMPANY_NAME,:#COMPANY_GEO,:#COMPANY_ACTIVE,:#CONTACT_FIRST_NAME,:#CONTACT_LAST_NAME,:#CONTACT_ADDRESS,:#CONTACT_CITY,:#CONTACT_STATE,:#CONTACT_ZIP,:#CONTACT_PHONE,:#CREATION_DATE,:#CREATION_USER)" />
+            <to uri="log:INFO" />
+        </route>
+
+        <route id="ReSTClientRoute">
+            <from uri="direct:callReSTEndpoint"/>
+            <setHeader headerName="operationName">
+                <constant>enrich</constant>
+            </setHeader>
+            <setHeader headerName="CamelCxfRsUsingHttpAPI">
+                <simple>${type:java.lang.Boolean.FALSE}</simple>
+            </setHeader>
+            <setHeader headerName="CamelAcceptContentType">
+                <constant>application/json</constant>
+            </setHeader>
+            <log message="Call ReST service with ${body}"/>
+            <to uri="cxfrs:bean:customerReSTClient"/>
+        </route>
+        <route id="ReSTServerRoute">
+            <from uri="cxfrs:bean:customerReSTServer?bindingStyle=SimpleConsumer&amp;resourceClasses=org.fuse.usecase.service.CustomerRest"/>
+            <bean ref="customerReSTBean" method="enrich"/>
+        </route>
+
+        <route id="WSClientRoute">
+            <from uri="direct:callWSEndpoint"/>
+            <setHeader headerName="operationName">
+                <constant>updateAccount</constant>
+            </setHeader>
+            <to uri="cxf:bean:customerWSServer"/>
+            <transform>
+                <simple>
+                    ${in.body[0]}
+                </simple>
+            </transform>
+        </route>
+        <route id="WSServerRoute">
+            <from uri="cxf:bean:customerWSServer"/>
+            <bean ref="customerWSBean" method="updateAccount"/>
+        </route>
+
     </camelContext>
 </beans>
