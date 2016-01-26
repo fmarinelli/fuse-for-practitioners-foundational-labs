@@ -1,14 +1,40 @@
+# Compiled source #
+###################
+*.com
 *.class
+*.dll
+*.exe
+*.o
+*.so
+
+# Build tool #
+##############
+target
+.idea
 *.iml
+*.im
+*.ipr
+*.iws
+.settings
+.project
+.classpath
+
+# OS generated files #
+######################
 *~
-~lock.*
-~$*
-*.DS_Store
-*.svn/
-*.nogit/
-LMSClass/
-*.nogit/
-*audio/
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+
+activemq-data
+*.epoch
+*.log
+.yardoc
 
 **/generated_content_ilt/
 **/generated_content_instructor/
@@ -20,14 +46,9 @@ LMSClass/
 **/generated_content/
 config/templates/_gen.yaml
 config/templates/_temp.yaml
-
-.classpath
-.project
-.settings/
 styles/
 
 **/src/data/error
 **/src/data/outbox
 **/activemq-data
-
 
