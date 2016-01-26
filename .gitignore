@@ -36,6 +36,14 @@ activemq-data
 *.log
 .yardoc
 
+~lock.*
+~$*
+*.svn/
+*.nogit/
+LMSClass/
+*.nogit/
+*audio/
+
 **/generated_content_ilt/
 **/generated_content_instructor/
 **/generated_content_instructor_snippet/
@@ -50,5 +58,3 @@ styles/
 
 **/src/data/error
 **/src/data/outbox
-**/activemq-data
-
