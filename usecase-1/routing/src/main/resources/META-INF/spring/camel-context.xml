@@ -8,6 +8,28 @@
        http://camel.apache.org/schema/spring/camel-spring.xsd">
 
     <camelContext trace="false" xmlns="http://camel.apache.org/schema/spring">
-        <propertyPlaceholder id="properties" location="fabric8/route.properties"/>
+        <propertyPlaceholder location="fabric8/route.properties" id="properties"/>
+        <endpoint id="csv2json" uri="dozer:csv2json?unmarshalId=transform-csv&amp;marshalId=transform-json&amp;sourceModel=org.acme.Customer&amp;targetModel=org.globex.Account&amp;mappingFile=transformation.xml"/>
+        <dataFormats>
+            <bindy type="Csv" classType="org.acme.Customer" id="transform-csv"/>
+            <json library="Jackson" id="transform-json"/>
+        </dataFormats>
+        <route>
+            <from uri="file:{{fileInput}}?fileName=customers.csv&amp;noop=true"/>
+            <onException>
+                <exception>java.lang.IllegalArgumentException</exception>
+                <handled>
+                    <constant>true</constant>
+                </handled>
+                <log message="Transformation result in error ${body}" />
+                <to uri="file:{{fileError}}?fileName=account-${date:now:yyyyMMdd}-${property.CamelSplitIndex}.json" />
+            </onException>
+            <split streaming="true">
+                <tokenize token="\n" trim="true" />
+                <log message="Transform input ${body} to json" />
+                <to ref="csv2json" />
+                <to uri="file:{{fileOutput}}?fileName=csv-record-${date:now:yyyyMMdd}-${property.CamelSplitIndex}.txt"/>
+            </split>
+        </route>
     </camelContext>
 </beans>
