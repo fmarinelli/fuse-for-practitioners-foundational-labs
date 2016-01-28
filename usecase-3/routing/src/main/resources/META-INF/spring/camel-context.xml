@@ -1,18 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <beans xmlns="http://www.springframework.org/schema/beans"
+       xmlns:context="http://www.springframework.org/schema/context"
        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
        xsi:schemaLocation="
+       http://www.springframework.org/schema/context
+       http://www.springframework.org/schema/context/spring-context.xsd
        http://www.springframework.org/schema/beans
        http://www.springframework.org/schema/beans/spring-beans.xsd
        http://camel.apache.org/schema/spring
        http://camel.apache.org/schema/spring/camel-spring.xsd">
 
+    <context:property-placeholder location="fabric8/db.properties" />
+
     <!-- H2 Datasource -->
     <bean id="usecaseDB" class="org.springframework.jdbc.datasource.DriverManagerDataSource">
-        <property name="driverClassName" value="org.h2.Driver"/>
-        <property name="url" value="jdbc:h2:tcp://localhost/~/usecaseDB"/>
-        <property name="username" value="sa"/>
-        <property name="password" value=""/>
+        <property name="driverClassName" value="${db.driver}"/>
+        <property name="url" value="${db.url}"/>
+        <property name="username" value="${db.username}"/>
+        <property name="password" value="${db.password}"/>
     </bean>
 
     <!-- SQL Component -->
@@ -46,58 +51,59 @@
 
     <camelContext trace="false" xmlns="http://camel.apache.org/schema/spring">
         <propertyPlaceholder id="properties" location="fabric8/route.properties"/>
+
         <endpoint id="csv2json"
                   uri="dozer:csv2json?unmarshalId=transform-csv&amp;marshalId=transform-json&amp;sourceModel=org.acme.Customer&amp;targetModel=org.globex.Account&amp;mappingFile=transformation.xml"/>
+
         <dataFormats>
             <bindy type="Csv" classType="org.acme.Customer" id="transform-csv"/>
             <json library="Jackson" unmarshalTypeName="org.globex.Account" id="transform-json"/>
         </dataFormats>
 
-        <route>
-            <from uri="file:{{fileInput}}?fileName=customers.csv&amp;noop=true"/>
+        <route id="queue-split-transform-queue">
+            <from uri="amq-notx:queue:{{queueInput}}"/>
+            <onException>
+                <exception>java.lang.IllegalArgumentException</exception>
+                <redeliveryPolicy maximumRedeliveries="0"/>
+                <log message="Transformation result in error ${body}"/>
+                <setHeader headerName="error_code">
+                    <constant>111</constant>
+                </setHeader>
+                <setHeader headerName="error_message">
+                    <simple>${exception.getMessage()}</simple>
+                </setHeader>
+                <setHeader headerName="message">
+                    <simple>${in.body}</simple>
+                </setHeader>
+                <setHeader headerName="status">
+                    <constant>ERROR</constant>
+                </setHeader>
+                <to uri="log:INFO"/>
+                <to uri="direct:error-queue"/>
+            </onException>
             <split streaming="true">
                 <tokenize token="\n" trim="true"/>
-                <to uri="amq-notx:queue:{{queueInput}}"/>
+                <log message="Transform input ${body} to json"/>
+                <to ref="csv2json"/>
+                <to id="output-queue-endpoint" uri="amq-notx:queue:{{queueOutput}}"/>
             </split>
         </route>
 
-        <route>
-            <from uri="amq-notx:queue:{{queueInput}}"/>
-            <onException useOriginalMessage="true">
-                <exception>java.lang.IllegalArgumentException</exception>
-                <handled>
-                    <constant>true</constant>
-                </handled>
-                <log message="Transformation result in error ${body}"/>
-                <transform>
-                    <method bean="processorBean" method="buildAccountError"/>
-                </transform>
-                <to uri="log:INFO"/>
-                <to uri="seda:error"/>
-            </onException>
-            <log message="Transform input ${body} to json"/>
-            <to ref="csv2json"/>
-            <convertBodyTo type="java.lang.String" />
-            <to uri="amq-notx:queue:{{queueOutput}}"/>
-        </route>
-
-        <route>
-            <from uri="seda:error"/>
-            <transform>
-                <method bean="processorBean" method="errorNamedParameters"/>
-            </transform>
+        <route id="direct-error-queue">
+            <from uri="direct:error-queue"/>
             <to uri="log:INFO"/>
-            <to uri="sql:INSERT INTO USECASE.T_ERROR (ERROR_CODE, ERROR_MESSAGE, MESSAGE, STATUS) VALUES(:#ERROR_CODE, :#ERROR_MESSAGE, :#MESSAGE, :#STATUS)"/>
+            <to id="error-queue-endpoint"
+                uri="sql:INSERT INTO USECASE.T_ERROR (ERROR_CODE, ERROR_MESSAGE, MESSAGE, STATUS) VALUES(:#error_code, :#error_message, :#message, :#status)"/>
         </route>
 
         <route>
             <from uri="amq-notx:queue:{{queueOutput}}"/>
-            <unmarshal ref="transform-json" />
-            <to uri="log:INFO" />
+            <unmarshal ref="transform-json"/>
+            <to uri="log:INFO"/>
             <transform>
-                <method bean="processorBean" method="defineNamedParameters" />
+                <method bean="processorBean" method="defineNamedParameters"/>
             </transform>
-            <to uri="sql:INSERT INTO USECASE.T_ACCOUNT (CLIENT_ID,SALES_CONTACT,COMPANY_NAME,COMPANY_GEO,COMPANY_ACTIVE,CONTACT_FIRST_NAME,CONTACT_LAST_NAME,CONTACT_ADDRESS,CONTACT_CITY,CONTACT_STATE,CONTACT_ZIP,CONTACT_PHONE,CREATION_DATE,CREATION_USER) VALUES (:#CLIENT_ID,:#SALES_CONTACT,:#COMPANY_NAME,:#COMPANY_GEO,:#COMPANY_ACTIVE,:#CONTACT_FIRST_NAME,:#CONTACT_LAST_NAME,:#CONTACT_ADDRESS,:#CONTACT_CITY,:#CONTACT_STATE,:#CONTACT_ZIP,:#CONTACT_PHONE,:#CREATION_DATE,:#CREATION_USER)" />
+            <to uri="sql:INSERT INTO USECASE.T_ACCOUNT (CLIENT_ID,SALES_CONTACT,COMPANY_NAME,COMPANY_GEO,COMPANY_ACTIVE,CONTACT_FIRST_NAME,CONTACT_LAST_NAME,CONTACT_ADDRESS,CONTACT_CITY,CONTACT_STATE,CONTACT_ZIP,CONTACT_PHONE,CREATION_DATE,CREATION_USER) VALUES (:#CLIENT_ID,:#SALES_CONTACT,:#COMPANY_NAME,:#COMPANY_GEO,:#COMPANY_ACTIVE,:#CONTACT_FIRST_NAME,:#CONTACT_LAST_NAME,:#CONTACT_ADDRESS,:#CONTACT_CITY,:#CONTACT_STATE,:#CONTACT_ZIP,:#CONTACT_PHONE,:#CREATION_DATE,:#CREATION_USER)"/>
         </route>
 
         <route>

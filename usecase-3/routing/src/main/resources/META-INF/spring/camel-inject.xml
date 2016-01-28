@@ -7,10 +7,12 @@
        http://camel.apache.org/schema/spring
        http://camel.apache.org/schema/spring/camel-spring.xsd">
 
-    <!--<camelContext trace="false" xmlns="http://camel.apache.org/schema/spring">-->
-        <!--<propertyPlaceholder id="properties" location="fabric8/route.properties"/>-->
-        <!--<route id="file-queue">-->
-        <!--</route>-->
-    <!--</camelContext>-->
+    <camelContext trace="false" xmlns="http://camel.apache.org/schema/spring">
+        <propertyPlaceholder id="properties" location="fabric8/route.properties"/>
+        <route id="file-queue">
+            <from uri="file:{{fileInput}}?fileName=customers.csv&amp;noop=true"/>
+            <to uri="amq-notx:queue:{{queueInput}}"/>
+        </route>
+    </camelContext>
 
 </beans>
