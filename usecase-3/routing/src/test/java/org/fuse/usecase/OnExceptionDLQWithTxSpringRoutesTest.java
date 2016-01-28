@@ -118,9 +118,8 @@ public class OnExceptionDLQWithTxSpringRoutesTest extends CamelSpringTestSupport
         }
 
         // Check if a message has been published on the DLQ
-//        Don't know why this should happen
-//        String result = (String) consumer.receiveBody("amq-notx:DLQ.usecase-input", 2000);
-//        assertEquals(records, result);
+        String result = (String) consumer.receiveBody("amq-notx:DLQ.usecase-input", 2000);
+        assertEquals(records, result);
     }
 
     @After
