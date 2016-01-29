@@ -22,7 +22,8 @@ import static org.junit.Assert.*;
 
 @RunWith(FrameworkRunner.class)
 @CreateLdapServer(transports = {
-        @CreateTransport(protocol = "LDAP", port = 1024) })
+        @CreateTransport(protocol = "LDAP", port = 1024)
+})
 @ApplyLdifFiles("org/fuse/usecase/activemq.ldif")
 public class LDAPCheckPasswordTest extends AbstractLdapTestUnit {
 
